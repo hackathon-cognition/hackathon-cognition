@@ -2,6 +2,7 @@
 import asyncio
 import html
 import json
+import logging
 from pathlib import Path
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -90,37 +91,57 @@ async def cmd_caso(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(CASE_DRAFT_SAVED)
 
 
+def _get_active_draft_id(telegram_id: int) -> int | None:
+    """Look up the user's current draft case from the DB (stateless)."""
+    with SessionLocal() as s:
+        patient = s.query(Patient).filter_by(telegram_id=telegram_id).first()
+        if not patient:
+            return None
+        draft = (
+            s.query(Case)
+            .filter(Case.patient_id == patient.id, Case.status == "draft")
+            .first()
+        )
+        return draft.id if draft else None
+
+
 async def cmd_exames(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("draft_case_id"):
+    if not _get_active_draft_id(update.effective_user.id):
         await update.message.reply_text(NO_DRAFT, parse_mode="HTML")
         return
-    context.user_data["awaiting_files"] = True
     await update.message.reply_text(ASK_FILES_NOW)
 
 
 async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("awaiting_files"):
-        return
-    case_id = context.user_data.get("draft_case_id")
-    if not case_id:
-        return
     msg = update.message
+    case_id = _get_active_draft_id(update.effective_user.id)
+    if not case_id:
+        await msg.reply_text(
+            "⚠️ Você ainda não tem um caso em andamento. Use /caso &lt;descrição&gt; primeiro.",
+            parse_mode="HTML",
+        )
+        return
     Path("data/files").mkdir(parents=True, exist_ok=True)
     entry: dict | None = None
-    if msg.photo:
-        photo = msg.photo[-1]
-        f = await photo.get_file()
-        path = f"data/files/{f.file_unique_id}.jpg"
-        await f.download_to_drive(path)
-        entry = {"path": path, "name": f"foto_{f.file_unique_id[:6]}.jpg"}
-    elif msg.document:
-        doc = msg.document
-        f = await doc.get_file()
-        original = doc.file_name or "documento.bin"
-        ext = Path(original).suffix or ".bin"
-        path = f"data/files/{f.file_unique_id}{ext}"
-        await f.download_to_drive(path)
-        entry = {"path": path, "name": original}
+    try:
+        if msg.photo:
+            photo = msg.photo[-1]
+            f = await photo.get_file()
+            path = f"data/files/{f.file_unique_id}.jpg"
+            await f.download_to_drive(path)
+            entry = {"path": path, "name": f"foto_{f.file_unique_id[:6]}.jpg"}
+        elif msg.document:
+            doc = msg.document
+            f = await doc.get_file()
+            original = doc.file_name or "documento.bin"
+            ext = Path(original).suffix or ".bin"
+            path = f"data/files/{f.file_unique_id}{ext}"
+            await f.download_to_drive(path)
+            entry = {"path": path, "name": original}
+    except Exception as e:
+        logging.exception("file download failed")
+        await msg.reply_text(f"⚠️ Falha ao baixar o arquivo: {e}")
+        return
     if not entry:
         return
     with SessionLocal() as s:
@@ -134,7 +155,7 @@ async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_enviar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    case_id = context.user_data.get("draft_case_id")
+    case_id = _get_active_draft_id(update.effective_user.id)
     if not case_id:
         await update.message.reply_text(NO_DRAFT, parse_mode="HTML")
         return
@@ -254,8 +275,13 @@ async def accept_appointment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 # ---------- builder ----------
+async def _on_error(update: object, context) -> None:
+    logging.error("bot error handling update: %s", context.error, exc_info=context.error)
+
+
 def build_patient_app(token: str) -> Application:
     app = Application.builder().token(token).build()
+    app.add_error_handler(_on_error)
 
     register_conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
