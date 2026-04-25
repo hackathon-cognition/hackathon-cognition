@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Caso #{{ case.case_id }} — MediCheck{% endblock %}
+{% block content %}
+<p><a href="/d/{{ doctor.token }}/casos" class="back-link">← Voltar para lista</a></p>
+
+<div class="card">
+  <h2>Caso #{{ case.case_id }} <span class="meta">— {{ case.specialty }}</span></h2>
+  <p class="meta">Recebido em {{ case.created_at.strftime('%d/%m %H:%M') }}</p>
+
+  <h3>Diagnóstico recebido</h3>
+  <p>{{ case.diagnosis }}</p>
+
+  {% if case.symptoms %}
+    <h3>Sintomas</h3>
+    <p>{{ case.symptoms }}</p>
+  {% endif %}
+
+  {% if case.prior_doctor %}
+    <h3>Médico anterior</h3>
+    <p>{{ case.prior_doctor }}</p>
+  {% endif %}
+
+  {% if case.files %}
+    <h3>Exames anexados</h3>
+    <div class="file-list">
+      {% for f in case.files %}
+        <a href="/files/{{ f.url_name }}" target="_blank">📎 {{ f.name }}</a>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+
+{% if case.status == 'pending' %}
+<div class="card">
+  <h2>Sua opinião</h2>
+  <form method="post" action="/d/{{ doctor.token }}/casos/{{ case.opinion_id }}">
+    <label>Veredicto</label>
+    <div class="verdict-options">
+      <label><input type="radio" name="verdict" value="agree" required> ✅ Concordo</label>
+      <label><input type="radio" name="verdict" value="disagree"> ❌ Discordo</label>
+    </div>
+
+    <label>Observações</label>
+    <textarea name="notes" placeholder="Sua análise do caso"></textarea>
+
+    <fieldset style="margin-top: 24px;">
+      <legend>Se discordar, proponha uma consulta:</legend>
+
+      <label>Tipo de consulta</label>
+      <select name="apt_type">
+        <option value="">— não propor —</option>
+        <option value="presencial">Presencial</option>
+        <option value="remoto">Remoto</option>
+      </select>
+
+      <label>Data e horário sugeridos</label>
+      <input type="text" name="apt_slot" placeholder="ex: 26/04 às 15h">
+
+      <label>Notas para o paciente</label>
+      <textarea name="apt_notes" placeholder="ex: trazer ECG recente"></textarea>
+    </fieldset>
+
+    <p style="margin-top: 20px;"><button type="submit">Enviar opinião</button></p>
+  </form>
+</div>
+{% else %}
+  <div class="card">
+    <p>Você já respondeu este caso. <a href="/d/{{ doctor.token }}/casos">Voltar</a></p>
+  </div>
+{% endif %}
+{% endblock %}

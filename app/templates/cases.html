@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Casos pendentes — MediCheck{% endblock %}
+{% block content %}
+<h2>Casos pendentes ({{ items|length }})</h2>
+
+{% if not items %}
+  <p class="empty">Nenhum caso pendente no momento.<br><span class="meta">A página atualiza sozinha a cada 15 segundos.</span></p>
+{% else %}
+  {% for it in items %}
+    <div class="card">
+      <a href="/d/{{ doctor.token }}/casos/{{ it.opinion_id }}">Caso #{{ it.case_id }}</a>
+      <p style="margin: 8px 0">{{ it.diagnosis_short }}{% if it.diagnosis_truncated %}…{% endif %}</p>
+      <span class="meta">Recebido em {{ it.created_at.strftime('%d/%m %H:%M') }}</span>
+    </div>
+  {% endfor %}
+{% endif %}
+
+<p style="margin-top:24px; text-align: center;">
+  <a href="/d/{{ doctor.token }}/casos" class="back-link">↻ Atualizar agora</a>
+</p>
+
+<script>
+  // auto-refresh every 15s
+  setTimeout(() => location.reload(), 15000);
+</script>
+{% endblock %}
